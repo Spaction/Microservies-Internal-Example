@@ -23,7 +23,10 @@ const mockEvents = {
     ]
 };
 
-
+// edit mock event data
+app.put('/edit', (req, res) => {
+    res.json([]);
+});
 
 
 // health endpoint - returns an empty array
