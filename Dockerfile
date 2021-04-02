@@ -1,5 +1,5 @@
-From launcher.gcr.io/google/nodejs
-Copy . /app/
-WorkDir /app
-Run npm install
-Cmd ["node", "server.js"]
+FROM launcher.gcr.io/google/nodejs
+COPY . /app/
+WORKDIR /app
+RUN npm install
+CMD ["node", "server.js"]
