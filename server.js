@@ -1,5 +1,30 @@
 'use strict';
 
+const grpc = require('@grpc/grpc-js')
+const protoLoader = require('@grpc/proto-loader')
+const protoPath = __dirname + '/Event.proto';
+
+// Suggested options for similarity to existing grpc.load behavior
+const packageDefinition = protoLoader.loadSync(
+    protoPath,
+    {keepCase: true,
+     longs: String,
+     enums: String,
+     defaults: true,
+     oneofs: true
+    });
+const routeguide = grpc.loadPackageDefinition(packageDefinition).RouteGuide;
+
+// bring in firestore
+const Firestore = require("@google-cloud/firestore");
+
+// initialize Firestore and set project id from env var
+const firestore = new Firestore(
+    {
+        projectId: process.env.GOOGLE_CLOUD_PROJECT
+    }
+);
+
 // express is a nodejs web server
 // https://www.npmjs.com/package/express
 const express = require('express');
@@ -24,8 +49,6 @@ const mockEvents = {
 };
 
 
-
-
 // health endpoint - returns an empty array
 app.get('/', (req, res) => {
     res.json([]);
@@ -36,11 +59,49 @@ app.get('/version', (req, res) => {
     res.json({ version: '1.0.0' });
 });
 
+async function getAllEventsGRPC(call, callback) {
+    callback(null, await getEventsGRPC());
+}
+
+function getEvents(req, res) {
+    firestore.collection("Events").get()
+        .then((snapshot) => {
+            if (!snapshot.empty) {
+                const ret = { events: []};
+                snapshot.docs.forEach(element => {
+                    ret.events.push(element.data());
+                }, this);
+                console.log(ret);
+                res.json(ret);
+            } else {
+                 res.json(mockEvents);
+            }
+        })
+        .catch((err) => {
+            console.error('Error getting events', err);
+            res.json(mockEvents);
+        });
+};
+
+async function getEventsGRPC() {
+    const snapshot = await firestore.collection("Events").get();
+    if (!snapshot.empty) {
+        const ret = { events: []};
+        snapshot.docs.forEach(element => {
+            const row = element.data();
+            ret.events.push({title: row.title, description: row.description});
+        }, this);
+        console.log(ret);
+        return ret;
+    } else {
+            return mockEvents;
+    }
+};
 
 // mock events endpoint. this would be replaced by a call to a datastore
 // if you went on to develop this as a real application.
 app.get('/events', (req, res) => {
-    res.json(mockEvents);
+    getEvents(req, res);
 });
 
 // Adds an event - in a real solution, this would insert into a cloud datastore.
@@ -53,16 +114,25 @@ app.post('/event', (req, res) => {
         description: req.body.description,
         id : mockEvents.events.length + 1
      }
-    // add to the mock array
-    mockEvents.events.push(ev);
-    // return the complete array
-    res.json(mockEvents);
+// this will create the Events collection if it does not exist
+    firestore.collection("Events").add(ev).then(ret => {
+        getEvents(req, res);
+    });
+
 });
 
 app.use((err, req, res, next) => {
     console.error(err.stack);
     res.status(500).json({ message: err.message });
 });
+
+function getServer() {
+  var server = new grpc.Server();
+  server.addService(routeguide.service, {
+    getEvents: getAllEventsGRPC
+  });
+  return server;
+}
 
 const PORT = 8082;
 const server = app.listen(PORT, () => {
@@ -71,5 +141,14 @@ const server = app.listen(PORT, () => {
 
     console.log(`Events app listening at http://${host}:${port}`);
 });
+
+if (require.main === module) {
+  // If this is run as a script, start a server on an unused port
+  var routeServer = getServer();
+  routeServer.bindAsync('0.0.0.0:8088', grpc.ServerCredentials.createInsecure(), () => {
+    routeServer.start();
+    console.log(`GRPC app listening on `)
+  });
+}
 
 module.exports = app;

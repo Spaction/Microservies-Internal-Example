@@ -1,0 +1,16 @@
+syntax = "proto3";
+
+service RouteGuide {
+    rpc GetEvents(EventReq) returns (EventArray) {}
+}
+
+message EventArray {
+    repeated Event events = 1;
+}
+
+message Event {
+    string title = 1;
+    string description = 2;
+}
+
+message EventReq {}
